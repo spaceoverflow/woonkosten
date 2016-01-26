@@ -19,27 +19,65 @@
 
 'use strict';
 
+
+// Convert JSX to JS on the fly
+require("node-jsx").install({
+  extension: ".jsx"
+});
+
 // This gulpfile makes use of new JavaScript features.
 // Babel handles this without us having to do anything. It just works.
 // You can read more about the new JavaScript features here:
 // https://babeljs.io/docs/learn-es2015/
 
 import path from 'path';
+import gutil from 'gulp-util';
+import browserify from 'browserify';
+import babelify from 'babelify';
+import reactify from 'reactify';
 import gulp from 'gulp';
+//import uglify from 'uglify';
 import del from 'del';
+import chalk from 'chalk';
+import source from 'vinyl-source-stream';
+import buffer from 'vinyl-buffer';
 import runSequence from 'run-sequence';
 import browserSync from 'browser-sync';
 import swPrecache from 'sw-precache';
 import gulpLoadPlugins from 'gulp-load-plugins';
-import {output as pagespeed} from 'psi';
+//import {output as pagespeed} from 'psi';
 import pkg from './package.json';
 
 const $ = gulpLoadPlugins();
 const reload = browserSync.reload;
 
+function map_error(err) {
+  if (err.fileName) {
+    // regular error
+    gutil.log(chalk.red(err.name)
+      + ': '
+      + chalk.yellow(err.fileName.replace(__dirname + '/src/js/', ''))
+      + ': '
+      + 'Line '
+      + chalk.magenta(err.lineNumber)
+      + ' & '
+      + 'Column '
+      + chalk.magenta(err.columnNumber || err.column)
+      + ': '
+      + chalk.blue(err.description))
+  } else {
+    // browserify error..
+    gutil.log(chalk.red(err.name)
+      + ': '
+      + chalk.yellow(err.message))
+  }
+
+  //this.end()
+}
+
 // Lint JavaScript
 gulp.task('lint', () =>
-  gulp.src('app/scripts/**/*.js')
+  gulp.src('app/scripts/**/main.js')
     .pipe($.eslint())
     .pipe($.eslint.format())
     .pipe($.if(!browserSync.active, $.eslint.failOnError()))
@@ -84,9 +122,9 @@ gulp.task('styles', () => {
 
   // For best performance, don't add Sass partials to `gulp.src`
   return gulp.src([
-    'app/styles/**/*.scss',
-    'app/styles/**/*.css'
-  ])
+      'app/styles/**/*.scss',
+      'app/styles/**/*.css'
+    ])
     .pipe($.newer('.tmp/styles'))
     .pipe($.sourcemaps.init())
     .pipe($.sass({
@@ -104,25 +142,31 @@ gulp.task('styles', () => {
 // Concatenate and minify JavaScript. Optionally transpiles ES2015 code to ES5.
 // to enables ES2015 support remove the line `"only": "gulpfile.babel.js",` in the
 // `.babelrc` file.
-gulp.task('scripts', () =>
-    gulp.src([
-      // Note: Since we are not using useref in the scripts build pipeline,
-      //       you need to explicitly list your scripts here in the right order
-      //       to be correctly concatenated
-      //'./app/scripts/bundle.js'
-      // Other scripts
-    ])
-      .pipe($.newer('.tmp/scripts'))
-      .pipe($.sourcemaps.init())
-      .pipe($.babel())
-      .pipe($.sourcemaps.write())
-      .pipe(gulp.dest('.tmp/scripts'))
-      .pipe($.concat('main.min.js'))
-      .pipe($.uglify({preserveComments: 'some'}))
-      // Output files
-      .pipe($.size({title: 'scripts'}))
-      .pipe($.sourcemaps.write('.'))
-      .pipe(gulp.dest('dist/scripts'))
+gulp.task('scripts', () => {
+    var bundler = browserify('./app/scripts/main.js')
+      .transform("babelify", {presets: ["react", "es2015"]});
+
+    return bundler.bundle()
+      .on('error', map_error)
+      .pipe(source('main.min.js'))
+      .pipe(buffer())
+      //.pipe(uglify())
+      .pipe(gulp.dest('dist/scripts'));
+
+//    var bundle = browserify({
+//      entries :,
+//      transform: reactify//[ 'babelify', {presets: ["es2015", "react"]} ]
+//
+//})
+//      .bundle();
+//    var outFile = 'main.min.js';
+//    bundle
+//      //.on('error', map_error)
+//      .pipe(source(outFile))
+//      .pipe(buffer())
+//      //.pipe(uglify())
+//      .pipe(gulp.dest('dist/scripts'));
+  }
 );
 
 // Scan your HTML for assets & optimize them
@@ -204,22 +248,22 @@ gulp.task('serve:dist', ['default'], () =>
 gulp.task('default', ['clean'], cb =>
   runSequence(
     'styles',
-    ['lint', 'html', 'scripts', 'images', 'copy'],
+    ['html', 'scripts', 'images', 'copy'],
     'generate-service-worker',
     cb
   )
 );
 
-// Run PageSpeed Insights
-gulp.task('pagespeed', cb =>
-  // Update the below URL to the public URL of your site
-  pagespeed('example.com', {
-    strategy: 'mobile'
-    // By default we use the PageSpeed Insights free (no API key) tier.
-    // Use a Google Developer API key if you have one: http://goo.gl/RkN0vE
-    // key: 'YOUR_API_KEY'
-  }, cb)
-);
+//// Run PageSpeed Insights
+//gulp.task('pagespeed', cb =>
+//  // Update the below URL to the public URL of your site
+//  pagespeed('example.com', {
+//    strategy: 'mobile'
+//    // By default we use the PageSpeed Insights free (no API key) tier.
+//    // Use a Google Developer API key if you have one: http://goo.gl/RkN0vE
+//    // key: 'YOUR_API_KEY'
+//  }, cb)
+//);
 
 // Copy over the scripts that are used in importScripts as part of the generate-service-worker task.
 gulp.task('copy-sw-scripts', () => {
